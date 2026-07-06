@@ -8,3 +8,5 @@ opencv-python
 langsmith
 SpeechRecognition
 PyAudio
+onnxruntime
+insightface

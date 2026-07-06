@@ -3,7 +3,7 @@ import datetime
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -67,7 +67,7 @@ class AnalyzeRequest(BaseModel):
 
 
 @app.post("/analyze")
-def analyze(request: AnalyzeRequest):
+async def analyze(request: AnalyzeRequest):
     """
     Unified analysis endpoint.
     - navigation / read / location  → always capture + analyze image
@@ -82,7 +82,7 @@ def analyze(request: AnalyzeRequest):
 
     # ── Modes that ALWAYS need the camera ──
     if request.mode in ("navigation", "read", "location"):
-        result = run_analysis(request.mode, request.prompt)
+        result = await run_analysis(request.mode, request.prompt)
 
         # Store in Firebase conversation history
         user_text = f"[{request.mode.title()} Mode]"
@@ -107,11 +107,11 @@ def analyze(request: AnalyzeRequest):
             f"The user specifically asked: {user_query}"
         )
         context_aware_prompt = build_prompt_with_context(visual_prompt, recent_context)
-        result = run_analysis("ask", context_aware_prompt)
+        result = await run_analysis("ask", context_aware_prompt)
 
-        # Store in conversation history
-        conversation_history.append({"role": "user", "text": user_query, "timestamp": now_ms})
-        conversation_history.append({"role": "assistant", "text": result["analysis"], "timestamp": now_ms})
+        # Store in Firebase conversation history
+        save_chat_message("user", user_query, now_ms)
+        save_chat_message("assistant", result["analysis"], now_ms + 1)
 
         return result
     else:
@@ -164,3 +164,60 @@ async def sse_event_generator():
 async def sse_events():
     """SSE endpoint for the React frontend to listen for wake word triggers."""
     return StreamingResponse(sse_event_generator(), media_type="text/event-stream")
+
+
+# ─── Face Recognition Enrollment Endpoints ───
+from face_recognition import enroll_face, delete_enrollment
+import numpy as np
+import cv2
+
+@app.get("/enrollments")
+def list_enrollments():
+    from ai import db, init_firebase
+    init_firebase()
+    ref = db.reference("enrolled_faces")
+    data = ref.get() or {}
+    return {"enrolled": list(data.keys())}
+
+@app.post("/enroll/live")
+def enroll_live(name: str = Form(...)):
+    """Captures a frame from the smart glasses camera to enroll a person."""
+    from ai import capture_image
+    import tempfile
+    
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
+        success, frame = capture_image(tmp.name, return_frame=True)
+        if not success or frame is None:
+            raise HTTPException(status_code=500, detail="Failed to capture image")
+        
+    try:
+        enroll_face(name, frame)
+        return {"status": "success", "message": f"Enrolled {name}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/enroll/upload")
+async def enroll_upload(name: str = Form(...), files: list[UploadFile] = File(...)):
+    """Uploads existing photos to enroll a person."""
+    try:
+        enrolled_count = 0
+        for file in files:
+            contents = await file.read()
+            nparr = np.frombuffer(contents, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if frame is not None:
+                enroll_face(name, frame)
+                enrolled_count += 1
+                
+        if enrolled_count == 0:
+            raise HTTPException(status_code=400, detail="No valid images found")
+            
+        return {"status": "success", "message": f"Enrolled {name} with {enrolled_count} images"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/enrollments/{name}")
+def remove_enrollment(name: str):
+    delete_enrollment(name)
+    return {"status": "success", "message": f"Deleted {name}"}

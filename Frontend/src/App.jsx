@@ -3,6 +3,7 @@ import { useTTS } from './hooks/useTTS';
 import { useAudioCues } from './hooks/useAudioCues';
 import { useSpeechInput } from './hooks/useSpeechInput';
 import { analyze } from './services/api';
+import EnrollmentView from './EnrollmentView';
 
 // Base URL for API requests
 const API_BASE_URL = 'http://raspy.local:8000';
@@ -27,6 +28,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showEnrollment, setShowEnrollment] = useState(false);
 
   // Audio & TTS hooks
   const { initAudio, playShutter, playThinking, playSuccess } = useAudioCues();
@@ -188,11 +190,19 @@ function App() {
           <span className="font-bold tracking-tight text-white text-base">SAMAKSH AI</span>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowEnrollment(true)}
+            className="text-xs font-semibold bg-emerald-600/20 text-emerald-400 px-3 py-1.5 rounded-full border border-emerald-500/30 hover:bg-emerald-600/30 transition-colors"
+          >
+            People
+          </button>
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold tracking-wider uppercase bg-slate-800 text-slate-300 border border-slate-700/50`}>
             API: Online
           </span>
         </div>
       </header>
+
+      {showEnrollment && <EnrollmentView onClose={() => setShowEnrollment(false)} />}
 
       {/* 3. MAIN WORKSPACE */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">

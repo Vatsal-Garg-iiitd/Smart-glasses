@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import logging
+import asyncio
 from dotenv import load_dotenv
 import cv2
 import firebase_admin
@@ -89,11 +90,13 @@ def init_camera():
     logging.error("[CAMERA] No camera found. Please ensure a webcam is connected.")
     return False
 
-def capture_image(target_path):
+def capture_image(target_path, return_frame=False):
     """Capture a single frame and save it directly to target_path."""
     global camera
     if camera is None or not camera.isOpened():
         logging.error("[CAMERA] Camera is not open or initialized.")
+        if return_frame:
+            return False, None
         return False
 
     logging.info("Image capture started...")
@@ -110,9 +113,13 @@ def capture_image(target_path):
     success = cv2.imwrite(target_path, frame)
     if success:
         logging.info(f"[CAMERA] Image successfully captured and saved to: {target_path}")
+        if return_frame:
+            return True, frame
         return True
     else:
         logging.error(f"[CAMERA] Failed to save captured frame to: {target_path}")
+        if return_frame:
+            return False, None
         return False
 
 def release_camera():
@@ -311,7 +318,7 @@ def fetch_recent_chat_history(cutoff_ms, limit):
 # ─── Standalone Test Runner ──────────────────────────────────────
 from datetime import datetime
 
-def run_analysis(mode, user_prompt=None):
+async def run_analysis(mode, user_prompt=None):
     prompts = {
         "navigation": PROMPT_NAVIGATION,
         "read": PROMPT_READ,
@@ -331,10 +338,31 @@ def run_analysis(mode, user_prompt=None):
     if not init_camera():
         raise Exception("Camera initialization failed")
 
-    if not capture_image(image_path):
+    if mode != "read":
+        success, frame = capture_image(image_path, return_frame=True)
+    else:
+        success = capture_image(image_path, return_frame=False)
+        frame = None
+
+    if not success:
         raise Exception("Image capture failed")
 
-    analysis = process_image(image_path, prompt)
+    # Run Gemini and Face Recognition concurrently
+    scene_task = asyncio.to_thread(process_image, image_path, prompt)
+    
+    faces_detected = []
+    if mode != "read" and frame is not None:
+        from face_recognition import recognize_faces
+        face_task = asyncio.to_thread(recognize_faces, frame)
+        analysis, faces = await asyncio.gather(scene_task, face_task)
+        faces_detected = faces
+        if faces:
+            names = [f["name"] for f in faces if f["name"] != "Unknown"]
+            if names:
+                unique_names = list(set(names))
+                analysis = f"You're facing {', '.join(unique_names)}. " + analysis
+    else:
+        analysis = await scene_task
 
     save_capture_metadata(
         filename=filename,
