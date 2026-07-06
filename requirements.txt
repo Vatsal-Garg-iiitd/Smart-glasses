@@ -1,0 +1,10 @@
+firebase-admin
+google-genai
+Pillow
+python-dotenv
+fastapi
+uvicorn
+opencv-python
+langsmith
+SpeechRecognition
+PyAudio

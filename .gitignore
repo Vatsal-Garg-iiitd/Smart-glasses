@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+venv/
+win_venv/
+env/
+.env
+
+# Secrets
+serviceAccountKey.json
+
+# Local files
+.DS_Store
+images/
+
+# IDE
+.vscode/
+.idea/
+
+# Archives
+*.zip
+*.tar.gz
+
+# Frontend
+Frontend/node_modules/
+Frontend/dist/
