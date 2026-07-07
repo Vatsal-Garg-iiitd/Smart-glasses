@@ -7,9 +7,9 @@ export default function EnrollmentView({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
-  // Upload State
   const [uploadName, setUploadName] = useState('');
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState([]); // Always a plain Array, not a FileList
+  const [uploadError, setUploadError] = useState('');
 
   // Live Capture State
   const [liveName, setLiveName] = useState('');
@@ -81,15 +81,18 @@ export default function EnrollmentView({ onClose }) {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage(`Success: ${data.message}`);
+        setMessage(`✅ Success: ${data.message}`);
+        setUploadError('');
         setUploadName('');
         setFiles([]);
         fetchEnrollments();
       } else {
-        setMessage(`Error: ${data.detail}`);
+        // Surface backend error clearly (e.g. quality gate, blur, multiple faces)
+        setUploadError(`❌ ${data.detail || 'Upload failed'}`);
+        setMessage('');
       }
     } catch (e) {
-      setMessage(`Error: ${e.message}`);
+      setUploadError(`❌ Network error: ${e.message}`);
     }
     setLoading(false);
   };
@@ -215,12 +218,13 @@ export default function EnrollmentView({ onClose }) {
               type="file" 
               accept="image/*"
               multiple
-              onChange={e => setFiles(e.target.files)}
+              onChange={e => setFiles(Array.from(e.target.files))}
               style={styles.fileInput}
             />
-            <button type="submit" disabled={loading || !uploadName || files.length === 0} style={styles.secondaryBtn}>
-              Upload {files.length > 0 ? files.length : ''} Photo(s)
+            <button type="submit" disabled={loading || !uploadName || files.length === 0} style={{...styles.secondaryBtn, opacity: (loading || !uploadName || files.length === 0) ? 0.5 : 1}}>
+              {loading ? 'Uploading...' : `Upload ${files.length > 0 ? files.length : ''} Photo(s)`}
             </button>
+            {uploadError && <p style={{color: '#ff6b6b', fontSize: '0.9rem', margin: 0}}>{uploadError}</p>}
           </form>
         </div>
       </div>
