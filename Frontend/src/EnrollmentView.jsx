@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const API_BASE_URL = 'http://raspy.local:8000';
 
@@ -10,6 +10,7 @@ export default function EnrollmentView({ onClose }) {
   const [uploadName, setUploadName] = useState('');
   const [files, setFiles] = useState([]); // Always a plain Array, not a FileList
   const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef(null);
 
   // Live Capture State
   const [liveName, setLiveName] = useState('');
@@ -62,16 +63,16 @@ export default function EnrollmentView({ onClose }) {
     setLoading(false);
   };
 
-  const handleUpload = async (e) => {
-    e.preventDefault();
-    if (!uploadName || files.length === 0) return setMessage('Name and files are required');
+  const handleUpload = async (selectedFiles) => {
+    if (!uploadName || !selectedFiles || selectedFiles.length === 0) return;
     setLoading(true);
-    setMessage(`Uploading ${files.length} photo(s)...`);
+    setUploadError('');
+    setMessage(`Uploading ${selectedFiles.length} photo(s)...`);
 
     const formData = new FormData();
     formData.append('name', uploadName);
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i]);
+    for (let i = 0; i < selectedFiles.length; i++) {
+      formData.append('files', selectedFiles[i]);
     }
 
     try {
@@ -85,6 +86,7 @@ export default function EnrollmentView({ onClose }) {
         setUploadError('');
         setUploadName('');
         setFiles([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         fetchEnrollments();
       } else {
         // Surface backend error clearly (e.g. quality gate, blur, multiple faces)
@@ -201,32 +203,61 @@ export default function EnrollmentView({ onClose }) {
           )}
         </div>
 
-        <div style={styles.card}>
-          <h3>Add via Photo Upload</h3>
-          <p style={{fontSize: '0.85rem', color: '#888'}}>
-            Upload multiple clear photos (front, left, right) for better accuracy.
-          </p>
-          <form onSubmit={handleUpload} style={styles.form}>
-            <input 
-              type="text" 
-              placeholder="Person's Name" 
-              value={uploadName} 
-              onChange={e => setUploadName(e.target.value)}
-              style={styles.input}
-            />
-            <input 
-              type="file" 
-              accept="image/*"
-              multiple
-              onChange={e => setFiles(Array.from(e.target.files))}
-              style={styles.fileInput}
-            />
-            <button type="submit" disabled={loading || !uploadName || files.length === 0} style={{...styles.secondaryBtn, opacity: (loading || !uploadName || files.length === 0) ? 0.5 : 1}}>
-              {loading ? 'Uploading...' : `Upload ${files.length > 0 ? files.length : ''} Photo(s)`}
-            </button>
-            {uploadError && <p style={{color: '#ff6b6b', fontSize: '0.9rem', margin: 0}}>{uploadError}</p>}
-          </form>
-        </div>
+          <div style={styles.card}>
+            <h3>Add via Photo Upload</h3>
+            <p style={{fontSize: '0.85rem', color: '#888'}}>
+              Upload clear photos (front, left, right) for better accuracy.
+            </p>
+            <div style={styles.form}>
+              <input 
+                type="text" 
+                placeholder="Person's Name" 
+                value={uploadName} 
+                onChange={e => setUploadName(e.target.value)}
+                style={styles.input}
+              />
+              {/* Hidden real file input */}
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept="image/*"
+                multiple
+                style={{display: 'none'}}
+                onChange={e => {
+                  const picked = Array.from(e.target.files);
+                  setFiles(picked);
+                  setUploadError('');
+                  if (picked.length > 0 && uploadName) {
+                    handleUpload(picked);
+                  } else if (!uploadName) {
+                    setUploadError('❌ Please enter a name first.');
+                  }
+                }}
+              />
+              {/* Visible styled button that opens file picker */}
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  if (!uploadName) {
+                    setUploadError('❌ Please enter a name first.');
+                    return;
+                  }
+                  setUploadError('');
+                  fileInputRef.current?.click();
+                }}
+                style={{...styles.secondaryBtn, opacity: loading ? 0.5 : 1}}
+              >
+                {loading ? 'Uploading...' : '📁 Choose & Upload Photos'}
+              </button>
+              {files.length > 0 && !loading && (
+                <p style={{color: '#aaa', fontSize: '0.85rem', margin: 0}}>
+                  {files.length} photo(s) selected
+                </p>
+              )}
+              {uploadError && <p style={{color: '#ff6b6b', fontSize: '0.9rem', margin: 0}}>{uploadError}</p>}
+            </div>
+          </div>
       </div>
     </div>
   );
