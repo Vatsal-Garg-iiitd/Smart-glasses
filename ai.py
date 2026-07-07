@@ -364,10 +364,12 @@ async def run_analysis(mode, user_prompt=None):
     else:
         analysis = await scene_task
 
+    import time
+    now_ms = int(time.time() * 1000)
     save_capture_metadata(
         filename=filename,
         image_url=f"/images/{filename}",
-        timestamp=timestamp,
+        timestamp=now_ms,
         analysis=analysis
     )
 

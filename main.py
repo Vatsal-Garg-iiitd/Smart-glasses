@@ -76,13 +76,13 @@ async def analyze(request: AnalyzeRequest):
     now = datetime.datetime.now(datetime.timezone.utc)
     now_ms = int(now.timestamp() * 1000)
 
-    # Build conversation context for continuity from Firebase
-    cutoff_ms = now_ms - CONTEXT_WINDOW_MS
-    recent_context = fetch_recent_chat_history(cutoff_ms, CONTEXT_MESSAGE_LIMIT)
-
     # ── Modes that ALWAYS need the camera ──
     if request.mode in ("navigation", "read", "location"):
-        result = await run_analysis(request.mode, request.prompt)
+        try:
+            result = await run_analysis(request.mode, request.prompt)
+        except Exception as e:
+            logging.error(f"[ANALYZE] Error running analysis: {e}")
+            raise HTTPException(status_code=502, detail="I'm having trouble analyzing the scene right now. Please try again.")
 
         # Store in Firebase conversation history
         user_text = f"[{request.mode.title()} Mode]"
@@ -93,6 +93,10 @@ async def analyze(request: AnalyzeRequest):
 
     # ── "ask" / custom mode: let the LLM decide if it needs the camera ──
     user_query = request.prompt or "Describe what you see"
+
+    # Build conversation context for continuity from Firebase
+    cutoff_ms = now_ms - CONTEXT_WINDOW_MS
+    recent_context = fetch_recent_chat_history(cutoff_ms, CONTEXT_MESSAGE_LIMIT)
 
     # Build context string for triage and answering
     context_prompt = build_prompt_with_context("", recent_context).strip()
@@ -107,7 +111,11 @@ async def analyze(request: AnalyzeRequest):
             f"The user specifically asked: {user_query}"
         )
         context_aware_prompt = build_prompt_with_context(visual_prompt, recent_context)
-        result = await run_analysis("ask", context_aware_prompt)
+        try:
+            result = await run_analysis("ask", context_aware_prompt)
+        except Exception as e:
+            logging.error(f"[ANALYZE] Error running ask analysis: {e}")
+            raise HTTPException(status_code=502, detail="I'm having trouble processing the image. Please try again.")
 
         # Store in Firebase conversation history
         save_chat_message("user", user_query, now_ms)
