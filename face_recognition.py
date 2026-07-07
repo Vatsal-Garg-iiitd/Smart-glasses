@@ -27,8 +27,13 @@ def update_enrolled_faces_cache():
     enrolled_faces_cache = data if data else {}
     logging.info(f"[FACE] Enrolled cache updated: {len(enrolled_faces_cache)} people")
 
+import os
+
+# Configurable match threshold, default 0.4
+FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.4"))
+
 @traceable(name="recognize_faces")
-def recognize_faces(frame, threshold=0.4):
+def recognize_faces(frame, threshold=FACE_MATCH_THRESHOLD):
     """
     Detect faces in a raw numpy frame and recognize them via cosine similarity
     against Firebase-stored embeddings.
@@ -51,7 +56,7 @@ def recognize_faces(frame, threshold=0.4):
         for name, data in enrolled_faces_cache.items():
             enrolled_embs = data.get("embeddings", [])
             for e in enrolled_embs:
-                e_arr = np.array(e)
+                e_arr = np.array(e, dtype=np.float32) # Explicit float32 cast (P2.7)
                 sim = np.dot(emb, e_arr)
                 if sim > best_sim:
                     best_sim = float(sim)
@@ -79,11 +84,39 @@ def enroll_face(name, frame):
     faces = face_analyzer.get(frame)
     if not faces:
         raise ValueError("No face detected in the image.")
+        
+    # P2.9: Multiple faces disambiguation
+    if len(faces) > 1:
+        raise ValueError("Multiple faces detected. Please ensure only the person being enrolled is in the frame.")
 
-    # Get the largest face by bounding box area
-    faces = sorted(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]), reverse=True)
+    # P2.8: Image quality gate
     best_face = faces[0]
-    emb = best_face.normed_embedding.tolist()
+    
+    # Check detection confidence
+    if best_face.det_score < 0.6:
+        raise ValueError(f"Face detection confidence too low ({best_face.det_score:.2f}). Please ensure good lighting and look straight at the camera.")
+        
+    # Check face bounding box area (width * height)
+    bbox_width = best_face.bbox[2] - best_face.bbox[0]
+    bbox_height = best_face.bbox[3] - best_face.bbox[1]
+    if bbox_width * bbox_height < 10000:
+        raise ValueError("Face is too small in the frame. Please move closer to the camera.")
+        
+    # Check blur (variance of Laplacian on the cropped face)
+    x1, y1, x2, y2 = map(int, best_face.bbox)
+    # Ensure coordinates are within image bounds
+    x1 = max(0, x1); y1 = max(0, y1)
+    x2 = min(frame.shape[1], x2); y2 = min(frame.shape[0], y2)
+    face_crop = frame[y1:y2, x1:x2]
+    
+    if face_crop.size > 0:
+        gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+        blur_score = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
+        if blur_score < 50.0: # Threshold for blurriness
+            raise ValueError("Face image is too blurry. Please hold still.")
+
+    # P2.7: Explicit float casting for robust JSON serialization
+    emb = [float(x) for x in best_face.normed_embedding.tolist()]
 
     from ai import db, init_firebase
     init_firebase()

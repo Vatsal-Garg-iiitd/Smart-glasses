@@ -90,24 +90,30 @@ def init_camera():
     logging.error("[CAMERA] No camera found. Please ensure a webcam is connected.")
     return False
 
+import threading
+
+camera_lock = threading.Lock()
+
 def capture_image(target_path, return_frame=False):
     """Capture a single frame and save it directly to target_path."""
     global camera
-    if camera is None or not camera.isOpened():
-        logging.error("[CAMERA] Camera is not open or initialized.")
-        if return_frame:
-            return False, None
-        return False
+    
+    with camera_lock:
+        if camera is None or not camera.isOpened():
+            logging.error("[CAMERA] Camera is not open or initialized.")
+            if return_frame:
+                return False, None
+            return False
 
-    logging.info("Image capture started...")
-    # Flush camera buffer (read a few old frames)
-    for _ in range(5):
-        camera.read()
+        logging.info("Image capture started...")
+        # Flush camera buffer (read a few old frames)
+        for _ in range(5):
+            camera.read()
 
-    ret, frame = camera.read()
-    if not ret:
-        logging.error("[CAMERA] Failed to capture image from camera.")
-        return False
+        ret, frame = camera.read()
+        if not ret:
+            logging.error("[CAMERA] Failed to capture image from camera.")
+            return False
 
     # Save frame to path
     success = cv2.imwrite(target_path, frame)
